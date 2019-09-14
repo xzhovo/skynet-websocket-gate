@@ -500,9 +500,9 @@ function M.close(id, code ,reason)
     end
 end
 
-function M.forward(socket_id, handle, protocol, addr)
+function M.forward(fd, protocol, addr)
     protocol = protocol or "ws"
-    local ws_obj = _new_server_ws(socket_id, handle, protocol)
+    local ws_obj = _new_server_ws(fd, {}, protocol)
     ws_obj.addr = addr
 end
 

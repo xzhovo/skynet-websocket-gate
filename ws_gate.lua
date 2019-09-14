@@ -2,10 +2,14 @@ local skynet = require "skynet"
 require "skynet.manager"
 local socket = require "skynet.socket"
 local websocket = require "http.websocket"
+local socketdriver = require "skynet.socketdriver"
 
 local watchdog
 local connection = {}	-- fd -> connection : { fd , client, agent , ip, mode }
 local forwarding = {}	-- agent -> connection
+
+local client_number = 0
+local maxclient	-- max client
 
 local function unforward(c)
 	if c.agent then
@@ -20,14 +24,24 @@ local function close_fd(fd)
 	if c then
 		unforward(c)
 		connection[fd] = nil
+		client_number = client_number - 1
 	end
 end
 
 local handle = {}
 
 function handle.connect(fd)
+	print("ws connect from: " .. tostring(fd))
+	if client_number >= maxclient then
+		socketdriver.close(fd)
+		return
+	end
+	if nodelay then
+		socketdriver.nodelay(fd)
+	end
+
+	client_number = client_number + 1
 	local addr = websocket.addrinfo(fd)
-    print("ws connect from: " .. tostring(fd))
     local c = {
 		fd = fd,
 		ip = addr,
@@ -86,12 +100,13 @@ end
 local CMD = {}
 
 function CMD.open(source, conf)
-	print("open", source, conf)
 	watchdog = conf.watchdog or source
 
 	local address = conf.address or "0.0.0.0"
 	local port = assert(conf.port)
-	local protocol = "ws"
+	local protocol = conf.protocol or "ws"
+	maxclient = conf.maxclient or 1024
+	nodelay = conf.nodelay
     local fd = socket.listen(address, port)
     skynet.error(string.format("Listen websocket port:%s protocol:%s", port, protocol))
     socket.start(fd, function(fd, addr)
@@ -106,13 +121,11 @@ function CMD.forward(source, fd, client, address)
 	c.client = client or 0
 	c.agent = address or source
 	forwarding[c.agent] = c
-	-- websocket.forward(fd, handle, protocol, addr)
 end
 
 function CMD.accept(source, fd)
 	local c = assert(connection[fd])
 	unforward(c)
-	--websocket.start(fd)
 end
 
 function CMD.kick(source, fd)
